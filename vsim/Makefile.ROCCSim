@@ -1,0 +1,14 @@
+.PHONY: get_dump
+get_dump: 
+	cd ../bootrom && make clean && make
+
+.PHONY: create_verilog
+create_verilog:
+	make -f Makefile verilog CONFIG=freechips.rocketchip.system.RoccExampleConfig
+
+.PHONY: copy_to_windows
+copy_to_windows:
+	cp generated-src/freechips.rocketchip.system.RoccExampleConfig.v /mnt/d/POSIT/rocket_chip_sim/
+
+.PHONY: all
+all: get_dump create_verilog copy_to_windows

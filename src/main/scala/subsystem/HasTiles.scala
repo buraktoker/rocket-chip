@@ -103,7 +103,7 @@ case class TileSlavePortParams(
 trait HasTileInterruptSources
   extends CanHavePeripheryPLIC
   with CanHavePeripheryCLINT
-  with HasPeripheryDebug
+  //with HasPeripheryDebug
   with InstantiatesTiles
 { this: BaseSubsystem => // TODO ideally this bound would be softened to LazyModule
   /** meipNode is used to create a single bit subsystem input in Configs without a PLIC */
@@ -294,11 +294,11 @@ trait CanAttachTile {
     //       we stub out missing interrupts with constant sources here.
 
     // 1. Debug interrupt is definitely asynchronous in all cases.
-    domain.tile.intInwardNode :=
+   /* domain.tile.intInwardNode :=
       context.debugOpt
         .map { domain { IntSyncAsyncCrossingSink(3) } := _.intnode }
         .getOrElse { NullIntSource() }
-
+  */
     // 2. The CLINT and PLIC output interrupts are synchronous to the TileLink bus clock,
     //    so might need to be synchronized depending on the Tile's crossing type.
 
@@ -413,7 +413,8 @@ trait HasTiles extends InstantiatesTiles with HasCoreMonitorBundles with Default
 }
 
 /** Provides some Chisel connectivity to certain tile IOs */
-trait HasTilesModuleImp extends LazyModuleImp with HasPeripheryDebugModuleImp {
+//trait HasTilesModuleImp extends LazyModuleImp with HasPeripheryDebugModuleImp {
+  trait HasTilesModuleImp extends LazyModuleImp {
   val outer: HasTiles with HasTileInterruptSources with HasTileInputConstants
 
   val reset_vector = outer.tileResetVectorIONodes.zipWithIndex.map { case (n, i) => n.makeIO(s"reset_vector_$i") }

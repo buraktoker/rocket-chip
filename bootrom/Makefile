@@ -12,4 +12,11 @@ all: $(bootrom_img)
 	$(OBJCOPY) -O binary $< $@
 
 %.elf: %.S linker.ld
-	$(GCC) -Tlinker.ld $< -nostdlib -static -Wl,--no-gc-sections -o $@
+	$(GCC) -march=rv64g -O0 -Tlinker.ld $< -nostdlib -static -Wl,--no-gc-sections -o $@
+	riscv64-unknown-elf-objdump -D bootrom.elf > bootrom.dump
+
+dump:
+	riscv64-unknown-elf-objdump -D bootrom.elf > bootrom.dump
+
+clean:
+	rm -f bootrom.img

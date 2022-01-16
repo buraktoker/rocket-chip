@@ -17,7 +17,9 @@ sim_vsrcs = \
     $(vsrc)/$(TB).v \
     $(vsrc)/SimDTM.v \
     $(vsrc)/SimJTAG.v \
-    $(bb_vsrcs)
+    $(bb_vsrcs) \
+	$(base_dir)/posit_vsrc
+	
 
 # C sources
 
