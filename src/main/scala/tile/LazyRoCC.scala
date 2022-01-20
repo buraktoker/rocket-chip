@@ -135,7 +135,7 @@ class FPResult(implicit p: Parameters) extends CoreBundle()(p) {
   val exc = Bits(width = FPConstants.FLAGS_SZ)
 }
 */
-class AccumulatorExample(opcodes: OpcodeSet, val n: Int = 32)(implicit p: Parameters) extends LazyRoCC(opcodes,usesFPU=true) {
+class AccumulatorExample(opcodes: OpcodeSet, val n: Int = 16)(implicit p: Parameters) extends LazyRoCC(opcodes,usesFPU=true) {
   override lazy val module = new AccumulatorExampleModuleImp(this)
 }
 
@@ -153,7 +153,7 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
   val exception = Input(Bool())
 
   */
-  val cmd = Queue(io.cmd)
+  val cmd = Queue(io.cmd,16)
   //cmd iÃ§erisinde rs1 deÄŸeri ,rs2 deÄŸeri ve inst bulunur
   //BCT posit moduller
   val posit_to_int  = Module( new posit_to_int(32,64))
@@ -163,7 +163,7 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
   val posit_add_module = Module(new posit_add(32,2))
   val posit_mult_module = Module(new posit_mult(32,2))
   val bct_posit_div_module = Module(new bct_posit_div(32,2))
-  
+  val PositDivisionSqrt = Module(new PositDivisionSqrt(32,2))
   val funct = cmd.bits.inst.funct
   val addr = cmd.bits.rs2(log2Up(outer.n)-1,0)
   val addr_reg = RegNext(addr)
@@ -413,8 +413,8 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
   //posit write datapath
   val posit_write_value=RegNext(cmd.bits.rs1)
   //posit add,sub datapath
-  val source_1=cmd.bits.rs1(3,0)
-  val source_2=cmd.bits.rs1(7,4)
+  val source_1=cmd.bits.rs1(log2Up(outer.n)-1,0)
+  val source_2=cmd.bits.rs1(2*log2Up(outer.n)-1,log2Up(outer.n))
   posit_add_module.io.in1:=regfile(source_1)
   val in2_complement = Wire(UInt(32.W))
   in2_complement:=((~regfile(source_2))+1.U(32.W)) (31,0)
@@ -431,6 +431,39 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
 
   val addend = cmd.bits.rs1
   val destination_reg_wire = cmd.bits.rs2
+
+  //posit sqrt datapath
+  //multicycle oldugu icin bu dusunulerek hazırlandı. Komut bitmeden yeni komut alınmaz.
+  PositDivisionSqrt.io.sqrtOp:=true.B //her zaman karekok olacak
+  PositDivisionSqrt.io.B:=0.U
+  val block_cmd = RegInit(false.B)
+  val sqrt_dest_addr = RegInit(0.U((log2Up(outer.n)).W))
+  when(posit_sqrt & PositDivisionSqrt.io.inReady)
+  {
+    PositDivisionSqrt.io.A:=regfile(source_1)
+    PositDivisionSqrt.io.inValid:=true.B
+    block_cmd:=true.B
+    sqrt_dest_addr:=cmd.bits.rs2(log2Up(outer.n)-1,0)
+  }.elsewhen(PositDivisionSqrt.io.sqrtValid)
+  {
+    PositDivisionSqrt.io.A:=0.U
+    PositDivisionSqrt.io.inValid:=false.B
+    block_cmd:=false.B
+  }.otherwise
+  {
+    PositDivisionSqrt.io.A:=0.U
+    PositDivisionSqrt.io.inValid:=false.B
+  }
+  
+  when(block_cmd)
+  {
+    io.busy := true.B
+    cmd.ready := false.B //32 cycle surecegi icin yeni istek alma
+  }.otherwise
+  {
+    io.busy := false.B
+    cmd.ready := true.B //32 cycle surecegi icin yeni istek alma
+  }
   //val wdata = Mux(doWrite, addend, Mux(convert_int_to_posit,Int_to_Posit.io.out,0.U))
   //posit_write komutu geldiÄŸi an registerharitasÄ±na yazma isteÄŸi yapÄ±lÄ±r. YazÄ±lacak data cmd.bits.rs1 yazÄ±lacak adres cmd.bits.rs2
   when (posit_write) { //03-01-2022 Bir cycle geÃ§ yazma kaldÄ±rÄ±ldÄ±
@@ -449,6 +482,9 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
   }.elsewhen(get_fpu_reg & io.fpu_resp.fire())
   {
     regfile(float_to_posit_dest) :=FP_to_posit.io.out
+  }.elsewhen(PositDivisionSqrt.io.sqrtValid)
+  {
+    regfile(sqrt_dest_addr) :=PositDivisionSqrt.io.Q //valid olur olmaz sonucu yaz
   }
 
   /*.elsewhen(fpu_resp_valid_reg & (fpu_resp_bits_exc === 2.U)) //FPU'dan cevap ve data geldikten 1 cycle iÃ§inde iÅŸlem biter ve register'a yazabiliriz.// bozuk
@@ -472,12 +508,11 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
   val stallResp = doResp && !io.resp.ready
 
   //cmd.ready := !stallReg && !stallLoad && !stallResp
-  cmd.ready := !stallResp
+  //cmd.ready := !stallResp
     // command resolved if no stalls AND not issuing a load that will need a request
 
 
   //io.busy := cmd.valid || busy.reduce(_||_)
-  io.busy := false.B
     // Be busy when have pending memory requests or committed possibility of pending requests
   io.interrupt := false.B
     // Set this true to trigger an interrupt on the processor (please refer to supervisor documentation)

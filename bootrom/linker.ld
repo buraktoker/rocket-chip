@@ -6,6 +6,6 @@ SECTIONS
     .text.start : { *(.text.start) }
     . = ROM_BASE + 0x400;
     .text.hang : { *(.text.hang) }
-    . = ROM_BASE + 0x80;
+    . = ROM_BASE + 0x480;
     .rodata.dtb : { *(.rodata.dtb) }
 }
