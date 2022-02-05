@@ -50,9 +50,12 @@ class posit_add( val N : Int , val es : Int) extends BlackBox(Map("N" -> N,
   val io = IO(new Bundle {
     val in1 = Input(UInt(N.W))
     val in2 = Input(UInt(N.W))
+    val clock = Input(Clock())
+    val start = Input(Bool())
     val out = Output(UInt(N.W))
     val inf = Output(Bool())
     val zero = Output(Bool())
+    val done = Output(Bool())
   })
 }
 
@@ -62,9 +65,12 @@ class posit_mult( val N : Int , val es : Int) extends BlackBox(Map("N" -> N,
   val io = IO(new Bundle {
     val in1 = Input(UInt(N.W))
     val in2 = Input(UInt(N.W))
+    val clock = Input(Clock())
+    val start = Input(Bool())
     val out = Output(UInt(N.W))
     val inf = Output(Bool())
     val zero = Output(Bool())
+    val done = Output(Bool())
   })
 }
 
@@ -73,9 +79,13 @@ class bct_posit_div( val N : Int , val es : Int) extends BlackBox(Map("N" -> N,
   val io = IO(new Bundle {
     val in1 = Input(UInt(N.W))
     val in2 = Input(UInt(N.W))
+    val clock = Input(Clock())
+    val start = Input(Bool())
+    val reset = Input(Reset())
     val out = Output(UInt(N.W))
     val inf = Output(Bool())
     val zero = Output(Bool())
+    val done = Output(Bool())
   })
 }
 

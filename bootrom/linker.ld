@@ -4,8 +4,8 @@ SECTIONS
 
     . = ROM_BASE;
     .text.start : { *(.text.start) }
-    . = ROM_BASE + 0x400;
+    . = ROM_BASE + 0x800;
     .text.hang : { *(.text.hang) }
-    . = ROM_BASE + 0x480;
+    . = ROM_BASE + 0x880;
     .rodata.dtb : { *(.rodata.dtb) }
 }
