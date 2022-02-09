@@ -161,9 +161,12 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
   val Posit_to_Float = Module (new posit_to_float(32,2))
   val FP_to_posit = Module(new FP_to_posit(32,8,2)) //registerÄ± getirmek ?
   val posit_add_module = Module(new posit_add(32,2))
+  val posit_add_chisel_module = Module(new PositAdd(32,2))
   val posit_mult_module = Module(new posit_mult(32,2))
   val bct_posit_div_module = Module(new bct_posit_div(32,2))
-  val PositDivisionSqrt = Module(new PositDivisionSqrt(32,2))
+  //val PositDivisionSqrt = Module(new PositDivisionSqrt(32,2))
+  val PositDivisionSqrt = Module(new PositDivSqrt(32,2))
+  
   val funct = cmd.bits.inst.funct
   val addr = cmd.bits.rs2(8-1,0)
   val addr_reg = RegNext(addr)
@@ -414,17 +417,21 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
   //posit add,sub datapath
   val source_1=cmd.bits.rs1(8-1,0)
   val source_2=cmd.bits.rs1(2*8-1,8)
-  /*posit_add_module.io.clock:=clock
+  posit_add_module.io.clock:=clock
   posit_add_module.io.start:=posit_add | posit_sub
   posit_add_module.io.in1:=regfile(source_1)
+  posit_add_chisel_module.io.num1:=regfile(source_1)
+  posit_add_chisel_module.io.num2:=regfile(source_2)
+  posit_add_chisel_module.io.sub:=posit_sub
+  
   val in2_complement = Wire(UInt(32.W))
   in2_complement:=((~regfile(source_2))+1.U(32.W)) (31,0)
-  posit_add_module.io.in2:=Mux(posit_add,regfile(source_2),in2_complement)*/
-  val PositAdd = Module(new PositAdd(32,2))
+  posit_add_module.io.in2:=Mux(posit_add,regfile(source_2),in2_complement)
+  /*val PositAdd = Module(new PositAdd(32,2))
   PositAdd.io.num1:=regfile(source_1)
   PositAdd.io.num2:=regfile(source_2)
   PositAdd.io.sub := posit_sub
-  
+  */
 
   //posit mul datapath
   posit_mult_module.io.clock:=clock
@@ -442,13 +449,13 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
   val block_cmd_2 = RegInit(false.B)
   val block_cmd_3 = RegInit(false.B)
   val block_cmd_4 = RegInit(false.B)
-  /*when(posit_add | posit_sub)
+  when(posit_add | posit_sub)
   {
     block_cmd_3:=true.B //division esnasında yeni bir istek almamak için
   }.elsewhen(posit_add_module.io.done)
   {
     block_cmd_3:=false.B
-  } */
+  }
   when(posit_mul)
   {
     block_cmd_4:=true.B //division esnasında yeni bir istek almamak için
@@ -481,24 +488,24 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
   //posit sqrt datapath
   //multicycle oldugu icin bu dusunulerek hazırlandı. Komut bitmeden yeni komut alınmaz.
   PositDivisionSqrt.io.sqrtOp:=true.B //her zaman karekok olacak
-  PositDivisionSqrt.io.B:=0.U
+  PositDivisionSqrt.io.num2:=0.U
   val block_cmd = RegInit(false.B)
   val sqrt_dest_addr = RegInit(0.U(8.W))
-  when(posit_sqrt & PositDivisionSqrt.io.inReady)
+  when(posit_sqrt & PositDivisionSqrt.io.readyIn)
   {
-    PositDivisionSqrt.io.A:=regfile(source_1)
-    PositDivisionSqrt.io.inValid:=true.B
+    PositDivisionSqrt.io.num1:=regfile(source_1)
+    PositDivisionSqrt.io.validIn:=true.B
     block_cmd:=true.B
     sqrt_dest_addr:=cmd.bits.rs2(8-1,0)
-  }.elsewhen(PositDivisionSqrt.io.sqrtValid)
+  }.elsewhen(PositDivisionSqrt.io.validOut_sqrt)
   {
-    PositDivisionSqrt.io.A:=0.U
-    PositDivisionSqrt.io.inValid:=false.B
+    PositDivisionSqrt.io.num1:=0.U
+    PositDivisionSqrt.io.validIn:=false.B
     block_cmd:=false.B
   }.otherwise
   {
-    PositDivisionSqrt.io.A:=0.U
-    PositDivisionSqrt.io.inValid:=false.B
+    PositDivisionSqrt.io.num1:=0.U
+    PositDivisionSqrt.io.validIn:=false.B
   }
   
   when(block_cmd | block_cmd_2 | block_cmd_3 | block_cmd_4)
@@ -520,23 +527,21 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
   }.elsewhen(bct_posit_div_module.io.done)
   {
     regfile(posit_div_dest) := bct_posit_div_module.io.out
-  }/*.elsewhen(posit_add_module.io.done)
-  {PositAdd.io.out   
+  }.elsewhen(posit_add_module.io.done)
+  {   
     //regfile(destination_reg_wire) := posit_add_module.io.out
+      //posit_add_chisel_module.io.out
       regfile(posit_add_dest) := posit_add_module.io.out    
-  }*/.elsewhen(posit_add | posit_sub)
-  {
-    //regfile(destination_reg_wire) := posit_add_module.io.out
-      regfile(destination_reg_wire) := PositAdd.io.out       
+      //regfile(destination_reg_wire) := posit_add_chisel_module.io.out   
   }.elsewhen(convert_int_to_posit)
   {
     regfile(int_to_posit_dest) := int_to_posit_res
   }.elsewhen(get_fpu_reg & io.fpu_resp.fire())
   {
     regfile(float_to_posit_dest) :=FP_to_posit.io.out
-  }.elsewhen(PositDivisionSqrt.io.sqrtValid)
+  }.elsewhen(PositDivisionSqrt.io.validOut_sqrt)
   {
-    regfile(sqrt_dest_addr) :=PositDivisionSqrt.io.Q //valid olur olmaz sonucu yaz
+    regfile(sqrt_dest_addr) :=PositDivisionSqrt.io.out //valid olur olmaz sonucu yaz
   }
 
   /*.elsewhen(fpu_resp_valid_reg & (fpu_resp_bits_exc === 2.U)) //FPU'dan cevap ve data geldikten 1 cycle iÃ§inde iÅŸlem biter ve register'a yazabiliriz.// bozuk
