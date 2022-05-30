@@ -4,7 +4,6 @@
 package freechips.rocketchip.tile
 
 import chisel3._
-import chisel3.dontTouch
 import chisel3.util._
 import chisel3.util.HasBlackBoxResource
 import chisel3.experimental.IntParam
@@ -142,22 +141,37 @@ class AccumulatorExample(opcodes: OpcodeSet, val n: Int = 16)(implicit p: Parame
 
 class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Parameters) extends LazyRoCCModuleImp(outer)
     with HasCoreParameters {
+  //32'lik bir register haritasÄ± konuldu
   val regfile = Mem(outer.n, UInt(xLen.W))
   val busy = RegInit(VecInit(Seq.fill(outer.n){false.B}))
+  /*
+    val cmd = Flipped(Decoupled(new RoCCCommand))
+  val resp = Decoupled(new RoCCResponse)
+  val mem = new HellaCacheIO
+  val busy = Output(Bool())
+  val interrupt = Output(Bool())
+  val exception = Input(Bool())
+
+  */
   val cmd = Queue(io.cmd,16)
+  //cmd iÃ§erisinde rs1 deÄŸeri ,rs2 deÄŸeri ve inst bulunur
+  //BCT posit moduller
   val posit_to_int  = Module( new posit_to_int(32,64))
   val Int_to_Posit  = Module( new Int_to_Posit(32,2))
   val Posit_to_Float = Module (new posit_to_float(32,2))
-  val FP_to_posit = Module(new FP_to_posit(32,8,2)) 
+  val FP_to_posit = Module(new FP_to_posit(32,8,2)) //registerÄ± getirmek ?
   val posit_add_module = Module(new posit_add(32,2))
   val posit_add_chisel_module = Module(new PositAdd(32,2))
   val posit_mult_module = Module(new posit_mult(32,2))
   val bct_posit_div_module = Module(new bct_posit_div(32,2))
+  //val PositDivisionSqrt = Module(new PositDivisionSqrt(32,2))
+  val PositDivisionSqrt = Module(new PositDivSqrt(32,2))
+  
   val funct = cmd.bits.inst.funct
   val addr = cmd.bits.rs2(8-1,0)
   val addr_reg = RegNext(addr)
   val cmd_fire_reg = RegNext(cmd.fire())
-  val convert_int_to_posit = funct === 0.U & cmd.fire()
+  val convert_int_to_posit = funct === 0.U & cmd.fire()//rs1'dan gelen deÄŸeri inst.rs2'nÄ±n gÃ¶sterdiÄŸi yere yazalÄ±m
   val convert_int_to_posit_reg = RegInit(false.B)
   val convert_posit_to_int = funct === 1.U & cmd.fire()//
   val convert_posit_to_int_reg = RegInit(false.B)
@@ -165,7 +179,7 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
   val convert_float_to_posit_reg = RegInit(false.B)
   val convert_posit_to_float = funct === 3.U & cmd.fire()//
   val convert_posit_to_float_reg = RegInit(false.B)
-  val posit_write = funct === 4.U & cmd.fire()
+  val posit_write = funct === 4.U & cmd.fire()// 1 cycleda geciktiriliyor.
   val posit_write_reg = RegInit(false.B)
   val posit_add = funct === 5.U & cmd.fire()
   val posit_add_reg = RegInit(false.B)
@@ -175,7 +189,8 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
   val posit_mul_reg = RegInit(false.B)
   val posit_div = funct === 8.U & cmd.fire()
   val posit_div_reg = RegInit(false.B)
-  val posit_sqrt = funct === 9.U & cmd.fire() 
+  val posit_sqrt = funct === 9.U & cmd.fire() //1 cycle sÃ¼rmediÄŸi iÃ§in deÄŸerlendirilecek
+  //command regs
   convert_int_to_posit_reg := convert_int_to_posit 
   convert_posit_to_int_reg := convert_posit_to_int 
   convert_float_to_posit_reg := convert_float_to_posit 
@@ -185,142 +200,202 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
   posit_sub_reg := posit_sub 
   posit_mul_reg := posit_mul 
   posit_div_reg := posit_div 
+  //output regs
   val convert_posit_to_float_out = RegInit(0.U(32.W))
   val convert_posit_to_float_dest = RegInit(0.U(5.W))
+  //val doLoad = funct === 5.U
+
+  //posit to float datapath
   val convert_posit_to_float_write = RegInit(false.B) 
   val delayed_posit_to_float_in = RegInit(0.U(32.W))
   val delayed_convert_posit_to_float_dest = RegInit(0.U(5.W))
   val delayed_convert_posit_to_float = RegInit(false.B)
   val block_convert = WireInit(false.B)
   block_convert:=convert_posit_to_float_write & !io.fpu_req.ready & convert_posit_to_float
+  //val delayed values of float to posit
   val float_to_posit_delayed_rs1 = RegInit(0.U(32.W))
   val float_to_posit_delayed_rs2 = RegInit(0.U(32.W))
   val float_to_posit_delayed = RegInit(false.B)
   val get_fpu_reg = RegInit(false.B)
   val float_to_posit_dest = RegInit(0.U(2.W))
-  val delayed_convert_posit_to_float_reg = RegInit(false.B)
-  val io_fpu_resp_fire = io.fpu_resp.valid
-  io.fpu_req.bits.rm:=0.U
-  val fpu_req_1 = Wire(Bool())
-  val fpu_req_2 = Wire(Bool())
-  val fpu_req_in1_1 = Wire(UInt(65.W))
-  val fpu_req_in1_2 = Wire(UInt(65.W))
-  val fpu_req_in2_1 = Wire(UInt(65.W))
-  val fpu_req_in2_2 = Wire(UInt(65.W))
-  val fpu_req_fmaCmd_1 = Wire(UInt(2.W))
-  val fpu_req_fmaCmd_2 = Wire(UInt(2.W))
-  val block_cmd_1 = RegInit(false.B)
-  val block_cmd_5 = RegInit(false.B)
-  when(convert_posit_to_float & !delayed_convert_posit_to_float_reg)
+  when(convert_posit_to_float)
   {
     Posit_to_Float.io.in:=regfile(cmd.bits.rs1)
     convert_posit_to_float_out:=Posit_to_Float.io.out
     convert_posit_to_float_dest:=cmd.bits.rs2
-    fpu_req_1:=false.B
-    fpu_req_fmaCmd_1:=0.U 
-    fpu_req_in1_1:=0.U 
-    fpu_req_in2_1:= 0.U 
-    block_cmd_1:=true.B
-  }.elsewhen(convert_posit_to_float_reg | delayed_convert_posit_to_float_reg)
-  {    
+    io.fpu_req.valid:=false.B
+  }.elsewhen(convert_posit_to_float_reg)
+  {
     when(io.fpu_req.ready)
     {
-      fpu_req_1:=true.B
-      fpu_req_fmaCmd_1:=1.U 
-      fpu_req_in1_1:=convert_posit_to_float_dest 
-      fpu_req_in2_1:= convert_posit_to_float_out 
-      delayed_convert_posit_to_float_reg:=false.B
-      block_cmd_1:=false.B
+      io.fpu_req.valid:=true.B
+      io.fpu_req.bits.rm:=0.U
+      io.fpu_req.bits.fmaCmd:=1.U //write float reg file
+      io.fpu_req.bits.in1:=convert_posit_to_float_dest //float address
+      io.fpu_req.bits.in2:= convert_posit_to_float_out //float data
     }.otherwise
     {
-      fpu_req_1:=false.B
-      fpu_req_fmaCmd_1:=0.U 
-      fpu_req_in1_1:=0.U 
-      fpu_req_in2_1:= 0.U 
-      delayed_convert_posit_to_float_reg:=true.B
+      io.fpu_req.valid:=false.B
     }
-  }.otherwise
-  {
-    fpu_req_1:=false.B
-    fpu_req_fmaCmd_1:=0.U 
-    fpu_req_in1_1:=0.U
-    fpu_req_in2_1:= 0.U 
-  }
-  val float_to_posit_reg_val = RegInit(0.U(32.W)) 
-  val fpu_resp_valid_reg = RegNext(io.fpu_resp.valid)
-  val fpu_resp_bits_exc = RegNext(io.fpu_resp.bits.exc)
 
-  when(convert_float_to_posit | float_to_posit_delayed)
+  }.elsewhen(convert_float_to_posit | float_to_posit_delayed)
   {
-    block_cmd_5:=true.B
-    FP_to_posit.io.in:=0.U
     when(io.fpu_req.ready){
-      fpu_req_2:=true.B
-      fpu_req_fmaCmd_2:=2.U 
-      fpu_req_in1_2:=Mux(float_to_posit_delayed,float_to_posit_delayed_rs1,cmd.bits.rs1) 
+      io.fpu_req.valid:=true.B
+      io.fpu_req.bits.rm:=0.U
+      io.fpu_req.bits.fmaCmd:=2.U //read float reg file
+      io.fpu_req.bits.in1:=Mux(float_to_posit_delayed,float_to_posit_delayed_rs1,cmd.bits.rs1) //rs1 deÄŸeri adres olarak gÃ¶nderilir
       float_to_posit_delayed_rs1:=0.U
       float_to_posit_delayed:=false.B
-      get_fpu_reg:=true.B
-    }.otherwise
+      get_fpu_reg:=true.B // fpu'dan cevap geldiÄŸinde dÃ¶nÃ¼ÅŸÃ¼m baÅŸlayabilir
+      when(!float_to_posit_delayed) //istek geldiÄŸinde fpu hazÄ±r ise cmd'den destination'Ä± Ã§eksin
+      {
+        float_to_posit_dest:=addr
+      }
+    }.otherwise //float to posit conversion isteÄŸi geldi ancak fpu hazÄ±r deÄŸil. FPU hazÄ±r olana kadar istek bekletilir ve rs1 kaydedilir.
     {
-      fpu_req_2:=false.B
-      fpu_req_fmaCmd_2:=0.U 
-      fpu_req_in1_2:=0.U
+      io.fpu_req.valid:=false.B
       float_to_posit_delayed:=true.B
-      get_fpu_reg:=false.B
       when(!float_to_posit_delayed)
       {
-        float_to_posit_delayed_rs1:=cmd.bits.rs1 
+        float_to_posit_delayed_rs1:=cmd.bits.rs1 //rs1 deÄŸeri adres olarak gÃ¶nderilir
+        float_to_posit_dest:=addr //istek geldiÄŸinde fpu hazÄ±r deÄŸil ise cmd'den destination'Ä± Ã§eksin
       }
     }
-    when(!float_to_posit_delayed) 
-    {
-      float_to_posit_dest:=addr
-    }
-  }.elsewhen(io.fpu_resp.valid)
-  {
-    block_cmd_5:=false.B
-    FP_to_posit.io.in:=io.fpu_resp.bits.data
-    fpu_req_2:=false.B
-    fpu_req_fmaCmd_2:=0.U 
-    fpu_req_in1_2:=0.U
   }.otherwise
   {
-    fpu_req_2:=false.B
-    fpu_req_fmaCmd_2:=0.U 
-    FP_to_posit.io.in:=0.U
-    fpu_req_in1_2:=0.U
+    io.fpu_req.valid:=false.B
+    when(get_fpu_reg & io.fpu_resp.fire()) //float to posit instruction'Ä± sonrasÄ± fpu cevap dÃ¶nÃ¼yor.
+    {
+      get_fpu_reg:=false.B
+      FP_to_posit.io.in:=io.fpu_resp.bits.data
+    }
   }
+
+  //float to posit datapath
+    when(convert_float_to_posit  | float_to_posit_delayed) //istek gelince veya delayed false'a Ã§ekilene kadar loop'a girer
+    {
+
+      when(!float_to_posit_delayed)
+      {
+        io.fpu_req.valid:=false.B
+        float_to_posit_delayed_rs2:=cmd.bits.rs2 //komutla gelen rs2 registerÄ±na yazma isteÄŸi yap
+      }
+    }
+  
+  /*when((convert_posit_to_float & !block_convert) | delayed_convert_posit_to_float)
+  {
+    Posit_to_Float.io.in:=Mux(delayed_convert_posit_to_float,delayed_posit_to_float_in,regfile(cmd.bits.rs1))
+    convert_posit_to_float_out:=Posit_to_Float.io.out
+    convert_posit_to_float_dest:=Mux(delayed_convert_posit_to_float,delayed_convert_posit_to_float_dest,cmd.bits.rs2)
+    convert_posit_to_float_write:=true.B
+    delayed_convert_posit_to_float:=false.B
+    when(convert_posit_to_float_write & io.fpu_req.ready)
+    {
+      io.fpu_req.valid:=true.B
+      io.fpu_req.bits.rm:=0.U
+      io.fpu_req.bits.fmaCmd:=1.U //write float reg file
+      io.fpu_req.bits.in1:=convert_posit_to_float_dest //float address
+      io.fpu_req.bits.in2:= convert_posit_to_float_out //float data
+      convert_posit_to_float_write:=false.B
+    }
+  }.otherwise
+  {
+    Posit_to_Float.io.in:=0.U
+    when(convert_posit_to_float_write & io.fpu_req.ready) //aynÄ± anda ready deÄŸilse yeni iÅŸlem geldiyse ne olacak?
+    {
+      io.fpu_req.valid:=true.B
+      io.fpu_req.bits.rm:=0.U
+      io.fpu_req.bits.fmaCmd:=1.U //write float reg file
+      io.fpu_req.bits.in1:=convert_posit_to_float_dest //float address
+      io.fpu_req.bits.in2:= convert_posit_to_float_out //float data
+    }
+    when(block_convert)
+    {
+      io.fpu_req.valid:=false.B
+      delayed_posit_to_float_in:=cmd.bits.rs1
+      delayed_convert_posit_to_float_dest:=cmd.bits.rs2
+      delayed_convert_posit_to_float:=true.B
+    }
+    //float to posit datapath
+    when(convert_float_to_posit  | float_to_posit_delayed) //istek gelince veya delayed false'a Ã§ekilene kadar loop'a girer
+    {
+      when(io.fpu_req.ready){
+        io.fpu_req.valid:=true.B
+        io.fpu_req.bits.rm:=0.U
+        io.fpu_req.bits.fmaCmd:=2.U //read float reg file
+        io.fpu_req.bits.in1:=Mux(float_to_posit_delayed,float_to_posit_delayed_rs1,cmd.bits.rs1) //rs1 deÄŸeri adres olarak gÃ¶nderilir
+        float_to_posit_delayed_rs1:=0.U
+        float_to_posit_delayed:=false.B
+      }.otherwise //float to posit conversion isteÄŸi geldi ancak fpu hazÄ±r deÄŸil. FPU hazÄ±r olana kadar istek bekletilir ve rs1 kaydedilir.
+      {
+        io.fpu_req.valid:=false.B
+        when(!float_to_posit_delayed){
+          float_to_posit_delayed_rs1:=cmd.bits.rs1 //rs1 deÄŸeri adres olarak gÃ¶nderilir
+        }
+        float_to_posit_delayed:=true.B
+        //ADD DELAYED VALS
+      }
+
+      when(!float_to_posit_delayed)
+      {
+        io.fpu_req.valid:=false.B
+        float_to_posit_delayed_rs2:=cmd.bits.rs1 //komutla gelen rs2 registerÄ±na yazma isteÄŸi yap
+      }
+    }
+  }*/
+  //float to posit iÅŸleminde cmd'yi gÃ¶re float'a istek gÃ¶nder
+  //cmd'yi bir cycle Ã¶tele
+  //sonra iÅŸleme al posit registerlara yaz
+
+  //Floattan gelen datayÄ± alma
+  
+  val float_to_posit_reg_val = RegInit(0.U(32.W)) //req.bits.in1 ile giden adres edilen datayÄ± gÃ¶nderiyor
+  val fpu_resp_valid_reg = RegNext(io.fpu_resp.valid)
+  val fpu_resp_bits_exc = RegNext(io.fpu_resp.bits.exc)
   io.fpu_resp.ready:=true.B
-  fpu_req_in2_2:=0.U
-  io.fpu_req.valid:=fpu_req_1 | fpu_req_2
-  io.fpu_req.bits.fmaCmd:= fpu_req_fmaCmd_1 | fpu_req_fmaCmd_2
-  io.fpu_req.bits.in1:= fpu_req_in1_1 | fpu_req_in1_2
-  io.fpu_req.bits.in2:= fpu_req_in2_1 | fpu_req_in2_2
+  when(io.fpu_resp.valid)
+  {
+    float_to_posit_reg_val:=io.fpu_resp.bits.data
+  }
+  FP_to_posit.io.in:=float_to_posit_reg_val
+  
+  // datapath
+  //int to posit datapath
+  //data rs1'dan gelir
+  //destination rs2'dan gelir
   Int_to_Posit.io.in:=cmd.bits.rs1
   val int_to_posit_res = Int_to_Posit.io.out
   val int_to_posit_dest = cmd.bits.rs2
+  //posit to int
   val posit_to_int_res = RegInit(0.U(32.W))
   val posit_to_int_rd = RegInit(0.U(32.W))
   val delayed_posit_to_int = RegInit(false.B)
   when(convert_posit_to_int){
-    posit_to_int.io.in:=regfile(cmd.bits.rs1) 
-    posit_to_int_rd:=cmd.bits.inst.rd 
+    posit_to_int.io.in:=regfile(cmd.bits.rs1) //rs1 adresiyle gelen posit integer'a doner
+    posit_to_int_rd:=cmd.bits.inst.rd //sonuÃ§ instruction iÃ§indeki rd'ye yazÄ±lÄ±r
     posit_to_int_res:=posit_to_int.io.out
   }.otherwise
   {
-    posit_to_int.io.in:=0.U 
-    posit_to_int_rd:=0.U 
+    posit_to_int.io.in:=0.U //rs1 adresiyle gelen posit integer'a doner
+    posit_to_int_rd:=0.U //sonuÃ§ instruction iÃ§indeki rd'ye yazÄ±lÄ±r
     posit_to_int_res:=0.U
   }
+
+  
   when(convert_posit_to_int_reg | delayed_posit_to_int)
   {
     when(io.resp.ready)
     {
+      // PROC RESPONSE INTERFACE
       io.resp.valid := true.B
+      // valid response if valid command, need a response, and no stalls
+      //response deÄŸeri instruction'dan gelen RD deÄŸeri
       io.resp.bits.rd := posit_to_int_rd
+      // Must respond with the appropriate tag or undefined behavior
       io.resp.bits.data := posit_to_int_res
       delayed_posit_to_int:=false.B
+      // Semantics is to always send out prior accumulator register value
     }.otherwise
     {
       delayed_posit_to_int:=true.B
@@ -335,43 +410,54 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
     io.resp.bits.rd:=0.U
     io.resp.bits.data:=0.U
   }
+  //posit write datapath
   val posit_write_value=RegNext(cmd.bits.rs1)
+  //posit add,sub datapath
   val source_1=cmd.bits.rs1(8-1,0)
   val source_2=cmd.bits.rs1(2*8-1,8)
-  posit_add_module.io.in1:=regfile(source_1)
-  val in2_complement = Wire(UInt(32.W))
-  in2_complement:=((~regfile(source_2))+1.U(32.W)) (31,0)
-  posit_add_module.io.in2:=Mux(posit_add,regfile(source_2),in2_complement)
   posit_add_module.io.clock:=clock
   posit_add_module.io.start:=posit_add | posit_sub
+  posit_add_module.io.in1:=regfile(source_1)
   posit_add_chisel_module.io.num1:=regfile(source_1)
   posit_add_chisel_module.io.num2:=regfile(source_2)
   posit_add_chisel_module.io.sub:=posit_sub
+  
+  val in2_complement = Wire(UInt(32.W))
+  in2_complement:=((~regfile(source_2))+1.U(32.W)) (31,0)
+  posit_add_module.io.in2:=Mux(posit_add,regfile(source_2),in2_complement)
+  /*val PositAdd = Module(new PositAdd(32,2))
+  PositAdd.io.num1:=regfile(source_1)
+  PositAdd.io.num2:=regfile(source_2)
+  PositAdd.io.sub := posit_sub
+  */
+
+  //posit mul datapath
   posit_mult_module.io.clock:=clock
   posit_mult_module.io.start:=posit_mul
   posit_mult_module.io.in1:=regfile(source_1)
   posit_mult_module.io.in2:=regfile(source_2)
   val posit_mult_res = RegNext(posit_mult_module.io.out)
+  //posit div datapath
   bct_posit_div_module.io.in1:=regfile(source_1)
   bct_posit_div_module.io.in2:=regfile(source_2)
   bct_posit_div_module.io.clock:=clock
   bct_posit_div_module.io.reset:=reset
-  bct_posit_div_module.io.start:=posit_div | posit_sqrt 
-  bct_posit_div_module.io.op := posit_div 
+  bct_posit_div_module.io.start:=posit_div | posit_sqrt //karekok veya bolme bu module gelir
+  bct_posit_div_module.io.op := posit_div //bolme ise 1 olmalı
   val posit_div_dest = RegInit(0.U(8.W))
   val block_cmd_2 = RegInit(false.B)
   val block_cmd_3 = RegInit(false.B)
   val block_cmd_4 = RegInit(false.B)
   when(posit_add | posit_sub)
   {
-    block_cmd_3:=true.B 
+    block_cmd_3:=true.B //division esnasında yeni bir istek almamak için
   }.elsewhen(posit_add_module.io.done)
   {
     block_cmd_3:=false.B
   }
   when(posit_mul)
   {
-    block_cmd_4:=true.B 
+    block_cmd_4:=true.B //division esnasında yeni bir istek almamak için
   }.elsewhen(posit_mult_module.io.done)
   {
     block_cmd_4:=false.B
@@ -380,54 +466,127 @@ class AccumulatorExampleModuleImp(outer: AccumulatorExample)(implicit p: Paramet
   when(posit_div | posit_sqrt)
   {
     posit_div_dest:=cmd.bits.rs2(7,0)
-    block_cmd_2:=true.B 
+    block_cmd_2:=true.B //division esnasında yeni bir istek almamak için
   }.elsewhen(bct_posit_div_module.io.done)
   {
     block_cmd_2:=false.B
   }
-  val posit_mul_dest = RegInit(0.U(8.W))
 
   val addend = cmd.bits.rs1
   val destination_reg_wire = cmd.bits.rs2
   val destination_reg_wire_reg = RegNext(destination_reg_wire)
   val posit_add_dest = RegInit(0.U(8.W))
+  val posit_mul_dest = RegInit(0.U(8.W))
   when(posit_add | posit_sub)
   {
     posit_add_dest:=destination_reg_wire
   }
+
   when(posit_mul)
   {
     posit_mul_dest:=destination_reg_wire
   }
+  //posit sqrt datapath
+  //multicycle oldugu icin bu dusunulerek hazırlandı. Komut bitmeden yeni komut alınmaz.
+  PositDivisionSqrt.io.sqrtOp:=true.B //her zaman karekok olacak
+  PositDivisionSqrt.io.num2:=0.U
+  val block_cmd = RegInit(false.B)
+  val sqrt_dest_addr = RegInit(0.U(8.W))
 
-  when( block_cmd_1 | block_cmd_2 | block_cmd_3 | block_cmd_4 | block_cmd_5)
+  when(posit_sqrt & PositDivisionSqrt.io.readyIn)
+  {
+    PositDivisionSqrt.io.num1:=regfile(source_1)
+    PositDivisionSqrt.io.validIn:=true.B
+    block_cmd:=true.B
+    sqrt_dest_addr:=cmd.bits.rs2(8-1,0)
+  }.elsewhen(PositDivisionSqrt.io.validOut_sqrt)
+  {
+    PositDivisionSqrt.io.num1:=0.U
+    PositDivisionSqrt.io.validIn:=false.B
+    block_cmd:=false.B
+  }.otherwise
+  {
+    PositDivisionSqrt.io.num1:=0.U
+    PositDivisionSqrt.io.validIn:=false.B
+  }
+  
+  when( block_cmd_2 | block_cmd_3 | block_cmd_4)
   {
     io.busy := true.B
-    cmd.ready := false.B 
+    cmd.ready := false.B //32 cycle surecegi icin yeni istek alma
   }.otherwise
   {
     io.busy := false.B
-    cmd.ready := true.B 
+    cmd.ready := true.B //32 cycle surecegi icin yeni istek alma
   }
-  when (posit_write) { 
+  //val wdata = Mux(doWrite, addend, Mux(convert_int_to_posit,Int_to_Posit.io.out,0.U))
+  //posit_write komutu geldiÄŸi an registerharitasÄ±na yazma isteÄŸi yapÄ±lÄ±r. YazÄ±lacak data cmd.bits.rs1 yazÄ±lacak adres cmd.bits.rs2
+  when (posit_write) { //03-01-2022 Bir cycle geÃ§ yazma kaldÄ±rÄ±ldÄ±
     regfile(addr) := cmd.bits.rs1
   }.elsewhen(posit_mult_module.io.done){
+    //regfile(destination_reg_wire) := posit_mult_module.io.out
     regfile(posit_mul_dest) := posit_mult_module.io.out
   }.elsewhen(bct_posit_div_module.io.done)
   {
     regfile(posit_div_dest) := bct_posit_div_module.io.out
   }.elsewhen(posit_add_module.io.done)
   {   
-    regfile(posit_add_dest) := posit_add_module.io.out    
+    //regfile(destination_reg_wire) := posit_add_module.io.out
+      //posit_add_chisel_module.io.out
+      regfile(posit_add_dest) := posit_add_module.io.out    
+      //regfile(destination_reg_wire) := posit_add_chisel_module.io.out   
   }.elsewhen(convert_int_to_posit)
   {
     regfile(int_to_posit_dest) := int_to_posit_res
-  }.elsewhen(get_fpu_reg & io_fpu_resp_fire)
+  }.elsewhen(get_fpu_reg & io.fpu_resp.fire())
   {
     regfile(float_to_posit_dest) :=FP_to_posit.io.out
   }
+  when(PositDivisionSqrt.io.validOut_sqrt)
+  {
+    regfile(127) :=PositDivisionSqrt.io.out //valid olur olmaz sonucu yaz
+  }
+
+  /*.elsewhen(fpu_resp_valid_reg & (fpu_resp_bits_exc === 2.U)) //FPU'dan cevap ve data geldikten 1 cycle iÃ§inde iÅŸlem biter ve register'a yazabiliriz.// bozuk
+  {
+    regfile(float_to_posit_delayed_rs2) := FP_to_posit.io.out
+  }*/
+/*
+  when (io.mem.resp.valid) {
+    regfile(memRespTag) := io.mem.resp.bits.data
+    busy(memRespTag) := false.B
+  }
+
+  // control
+  when (io.mem.req.fire()) {
+    busy(addr) := true.B
+  }
+*/
+  val doResp = cmd.bits.inst.xd
+  //val stallReg = busy(addr)
+  //val stallLoad = doLoad && !io.mem.req.ready
+  val stallResp = doResp && !io.resp.ready
+
+  //cmd.ready := !stallReg && !stallLoad && !stallResp
+  //cmd.ready := !stallResp
+    // command resolved if no stalls AND not issuing a load that will need a request
+
+
+  //io.busy := cmd.valid || busy.reduce(_||_)
+    // Be busy when have pending memory requests or committed possibility of pending requests
   io.interrupt := false.B
+    // Set this true to trigger an interrupt on the processor (please refer to supervisor documentation)
   io.mem.req.valid:=false.B
+  // MEMORY REQUEST INTERFACE
+  /*io.mem.req.valid := cmd.valid && doLoad && !stallReg && !stallResp
+  io.mem.req.bits.addr := addend
+  io.mem.req.bits.tag := addr
+  io.mem.req.bits.cmd := M_XRD // perform a load (M_XWR for stores)
+  io.mem.req.bits.size := log2Ceil(8).U
+  io.mem.req.bits.signed := false.B
+  io.mem.req.bits.data := 0.U // we're not performing any stores...
+  io.mem.req.bits.phys := false.B
+  io.mem.req.bits.dprv := cmd.bits.status.dprv*/
 }
 
 

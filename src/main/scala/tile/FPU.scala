@@ -803,7 +803,7 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
     frfWriteBundle(0).wrenf := true.B
     frfWriteBundle(0).wrdata := ieee(wdata)
     rocc_fpu_write_ready:=false.B
-  }.elsewhen(io.cp_req.fire()) //dış dünyadan istek geldiğinde yazacak buna komut eklenebilir
+  }.elsewhen(io.cp_req.fire() & io.cp_req.bits.fmaCmd===1.U) //dış dünyadan istek geldiğinde yazacak buna komut eklenebilir
   {
     regfile(io.cp_req.bits.in1):=io.cp_req.bits.in2
     rocc_fpu_write_ready:=true.B
@@ -815,12 +815,17 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
   //Rocc float okuma isteği
   val cp_req_fire_reg = RegNext(io.cp_req.fire())
   val cp_req_bits_fmaCmd_reg= RegNext(io.cp_req.bits.fmaCmd)
+  val cp_req_bits_in1_reg = RegNext(io.cp_req.bits.in1)
   when(cp_req_fire_reg & (cp_req_bits_fmaCmd_reg===2.U)) // istek geldikten 1 cycle sonra cevap dönmeli
   {
     io.cp_resp.valid:=true.B
-    io.cp_resp.bits.data:=regfile(io.cp_req.bits.in1)
-    io.cp_resp.bits.exc := 2.U
+    io.cp_resp.bits.data:=regfile(cp_req_bits_in1_reg)
+  }.otherwise
+  {
+    io.cp_resp.valid:=false.B
+    io.cp_resp.bits.data:=0.U
   }
+    io.cp_resp.bits.exc := 0.U
 
   val ex_rs = ex_ra.map(a => regfile(a))
   when (io.valid) {

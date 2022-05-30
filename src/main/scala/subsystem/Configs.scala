@@ -277,14 +277,14 @@ class WithRoccExample extends Config((site, here, up) => {
         val accumulator = LazyModule(new AccumulatorExample(OpcodeSet.custom0, n = 128)(p))
         accumulator
     },
-    (p: Parameters) => {
+    /*(p: Parameters) => {
         val translator = LazyModule(new TranslatorExample(OpcodeSet.custom1)(p))
         translator
     },
     (p: Parameters) => {
         val counter = LazyModule(new CharacterCountExample(OpcodeSet.custom2)(p))
         counter
-    }/*,
+    }*//*,
     (p: Parameters) => {
       val blackbox = LazyModule(new BlackBoxExample(OpcodeSet.custom3, "RoccBlackBox")(p))
       blackbox

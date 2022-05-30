@@ -82,10 +82,14 @@ class bct_posit_div( val N : Int , val es : Int) extends BlackBox(Map("N" -> N,
     val clock = Input(Clock())
     val start = Input(Bool())
     val reset = Input(Reset())
+    val op = Input(Bool()) // 1 ise bolme, 0 ise karekok
     val out = Output(UInt(N.W))
-    val inf = Output(Bool())
-    val zero = Output(Bool())
+    /*val inf = Output(Bool())
+    val zero = Output(Bool())*/
     val done = Output(Bool())
+      
   })
+
+
 }
 

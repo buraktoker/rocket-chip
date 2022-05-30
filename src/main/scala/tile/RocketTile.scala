@@ -44,7 +44,7 @@ class RocketTile private(
     extends BaseTile(rocketParams, crossing, lookup, q)
     with SinksExternalInterrupts
     with SourcesExternalNotifications
-    with HasLazyRoCC  // implies CanHaveSharedFPU with CanHavePTW with HasHellaCache
+    with HasLazyRoCC  // connect RoCC accelerator to core
     with HasHellaCache
     with HasICacheFrontend
 {

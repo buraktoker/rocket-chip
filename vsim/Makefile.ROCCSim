@@ -6,9 +6,20 @@ get_dump:
 create_verilog:
 	make -f Makefile verilog CONFIG=freechips.rocketchip.system.RoccExampleConfig
 
+create_wo_posit_verilog:
+	make -f Makefile verilog
+
 .PHONY: copy_to_windows
 copy_to_windows:
 	cp generated-src/freechips.rocketchip.system.RoccExampleConfig.v /mnt/d/POSIT/rocket_chip_sim/
+	cp generated-src/freechips.rocketchip.system.RoccExampleConfig.v /mnt/d/POSIT/rocket_chip_sim/vivado_20183/project_1/project_1.srcs/sources_1/imports/srcs/
+
+copy_wo_posit_windows:
+	cp generated-src/freechips.rocketchip.system.DefaultConfig.v /mnt/d/POSIT/rocket_chip_sim_wo_posit/
+	cp generated-src/freechips.rocketchip.system.DefaultConfig.v /mnt/d/POSIT/rocket_chip_sim_wo_posit/vivado_20183/project_1/project_1.srcs/sources_1/imports/srcs/
 
 .PHONY: all
 all: get_dump create_verilog copy_to_windows
+
+.PHONY: all_wo_posit
+all_wo_posit: get_dump create_wo_posit_verilog copy_wo_posit_windows
